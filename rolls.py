@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # Usage:
 #
 #   echo 123456123456 | python3 rolls.py
