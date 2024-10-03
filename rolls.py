@@ -10,7 +10,6 @@
 from hashlib import sha256  # part of the Python Standard Library
 import argparse             # part of the Python Standard Library
 import subprocess           # part of the Python Standard Library
-import binascii             # part of the Python Standard Library
 
 # English wordlist
 wl = '''\
@@ -185,6 +184,8 @@ window wine wing wink winner winter wire wisdom wise wish witness wolf woman
 wonder wood wool word work world worry worth wrap wreck wrestle wrist write
 wrong yard year yellow you young youth zebra zero zone zoo'''.split()
 
+if len(wl) != 2048:
+    raise ValueError("Mnemonic must contain 2048 words.")
 
 def entropy_to_mnemonic24(entropy):
     # Apply BIP39 to convert entropy into seed words
@@ -244,10 +245,21 @@ def print_bip39_table(cols, components):
 
 def mnemonic_to_bytes(mnemonic):
     indices = [wl.index(word) for word in mnemonic]
+    # Convert indices to binary representation
     binary = ''.join(bin(index)[2:].zfill(11) for index in indices)
     entropy_bits = binary[:-len(binary)//33]
-    entropy_bytes = binascii.unhexlify('%x' % int(entropy_bits, 2))
-    return binascii.hexlify(entropy_bytes).decode()
+    if len(entropy_bits) % 4 != 0:
+        # Pad the entropy_bits to make its length a multiple of 4
+        entropy_bits = entropy_bits.zfill(len(entropy_bits) + (4 - len(entropy_bits) % 4))
+    # Convert entropy_bits to an integer
+    entropy_int = int(entropy_bits, 2)
+    # Convert the integer to a hexadecimal string
+    entropy_hex = hex(entropy_int)[2:]  # Remove the '0x' prefix
+    # Ensure the hexadecimal string has an even length
+    if len(entropy_hex) % 2 != 0:
+        entropy_hex = '0' + entropy_hex  # Pad with a leading zero if necessary
+
+    return entropy_hex
 
 def main():
     ###Added
