@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# Define the completion function
+_pincode_completion() {
+    local current_word previous_word options
+
+    current_word="${COMP_WORDS[COMP_CWORD]}"
+    previous_word="${COMP_WORDS[COMP_CWORD - 1]}"
+
+    # Define the options based on your usage function
+    options=(
+        "-f" "--file"
+        "-n" "--name"
+        "-m" "--mode"
+        "-c" "--count"
+        "-w" "--word-mode"
+    )
+
+    # Handle completion for options
+    if [[ ${COMP_CWORD} -eq 1 ]]; then
+        # First argument can be any of the options
+        COMPREPLY=($(compgen -W "${options[*]}" -- "$current_word"))
+    else
+        case "$previous_word" in
+        -f | --file)
+            # Suggest file paths for the -f option
+            COMPREPLY=($(compgen -f -- "$current_word"))
+            ;;
+        -n | --name)
+            # Allow any string input for the -n option
+            COMPREPLY=() # No specific completions, user can type anything
+            ;;
+        -m | --mode)
+            # Suggest the allowed formats for the -m option
+            COMPREPLY=($(compgen -W "dec hex entropy" -- "$current_word"))
+            ;;
+        -c | --count)
+            # Allow any number input for the -c option
+            COMPREPLY=() # No specific completions, user can type any number
+            ;;
+        *)
+            # Default completion for any other options
+            COMPREPLY=($(compgen -W "${options[*]}" -- "$current_word"))
+            ;;
+        esac
+    fi
+
+    return 0
+}
+
+# Register the completion function for your script
+complete -F _pincode_completion pincode.sh
