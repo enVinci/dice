@@ -25,7 +25,14 @@ BG_DarkRed='\033[48;5;52m'       # Background color (dark red)
 NC='\033[0m'                     # No Color
 
 readonly script_name=$(basename "$0")
-
+# Create an associative array to map long options to short options
+declare -A option_map=(
+    ["--file"]="-f"
+    ["--name"]="-n"
+    ["--type"]="-t"
+    ["--count"]="-c"
+    ["--word-mode"]="-w"
+)
 # Default values
 PASSMGR_PATH=${PASSMGR_PATH:-"passmgr"}
 ROLLS_SH_PATH=${ROLLS_SH_PATH:-"dicerolls"}
@@ -50,15 +57,31 @@ name_format_option() {
 usage() {
     cat <<EOF >&2
 This script generates a PIN code using the BIP-85 password generator with a password-protected pincode database.
-Usage: $script_name [-f <path>] [-n <string>] [-m <format>] [-c <number>] [-w]
-  -f <path>    Provide the path to the password-protected pincode database (default: ${pincode_db})
-  -n <string>  Provide a name for the pincode. The input is case insensitive (default: $(name_format_option $pincode_name))
-  -m <format>  Select output format for PIN mode: dec | hex | entropy (default: $output_format)
-  -c <number>  Set the count of characters (default: $c) or words (default: $w)
-  -w           Select BIP-39 word mode (default: $(name_mode_option $word_mode))
+Usage: $script_name [-f <path>] [-n <string>] [-t <format>] [-c <number>] [-w]
+  -f, --file <path>     Provide the path to the password-protected pincode database (default: ${pincode_db})
+  -n, --name <string>   Provide a name for the pincode. The input is case insensitive (default: $(name_format_option $pincode_name))
+  -t, --type <format>   Select output format for PIN mode: dec | hex | entropy (default: $output_format)
+  -c, --count <number>  Set the count of characters (default: $c) or words (default: $w)
+  -w, --word-mode       Select BIP-39 word mode (default: $(name_mode_option $word_mode))
 Version: 1.0
 EOF
     exit 1
+}
+
+# Function to convert long options to short options
+convert_options() {
+    local args=("$@")
+    local converted_args=()
+
+    for arg in "${args[@]}"; do
+        if [[ -n "${option_map[$arg]}" ]]; then
+            converted_args+=("${option_map[$arg]}")
+        else
+            converted_args+=("$arg")
+        fi
+    done
+
+    echo "${converted_args[@]}"
 }
 
 # Function for colored echo
@@ -81,8 +104,13 @@ if ! command -v "$PASSMGR_PATH" &>/dev/null; then
     exit 3
 fi
 
+# Convert long options to short options
+converted_args=($(convert_options "$@"))
+# Set the positional parameters to the contents of the converted_args array
+set -- "${converted_args[@]}"
+
 # Parse command-line options
-while getopts ":c:wm:f:n:w" opt; do
+while getopts ":c:wt:f:n:w" opt; do
     case ${opt} in
     f)
         pincode_db="$OPTARG"
@@ -90,11 +118,11 @@ while getopts ":c:wm:f:n:w" opt; do
     n)
         pincode_name="$OPTARG"
         if [[ -z "$pincode_name" ]]; then
-            cerror "-n option requires a non-empty argument."
+            cerror "Option: -n, --name requires a non-empty argument."
             usage
         fi
         ;;
-    m)
+    t)
         output_format="$OPTARG"
         format_option=true
         ;;
@@ -106,10 +134,11 @@ while getopts ":c:wm:f:n:w" opt; do
         word_mode=true
         ;;
     \?)
+        cerror "Invalid option: -$OPTARG"
         usage
         ;;
     :)
-        cerror "Option -"$OPTARG" requires an argument."
+        cerror "Option: -"$OPTARG" requires an argument."
         usage
         ;;
     esac
@@ -129,13 +158,13 @@ fi
 
 # Validate that the argument is one of the allowed formats
 if [[ ! "$output_format" =~ ^(dec|hex|entropy)$ ]]; then
-    cerror "-m option argument must be one of: dec | hex | entropy."
+    cerror "Option: -t, --type argument must be one of: dec | hex | entropy."
     usage
 fi
 
-# Check for collisions between -m and -w
+# Check for collisions between -t and -w
 if [[ "$word_mode" == true && "$format_option" == true ]]; then
-    cerror "-m option cannot be used with -w option."
+    cerror "Option: -t, --type cannot be used with -w, --word-mode option."
     usage
 fi
 
@@ -144,7 +173,7 @@ fi
 
 # Validate that the argument is a number
 if ! [[ "$c" =~ ^[0-9]+$ ]]; then
-    cerror "-n option argument must be a number."
+    cerror "option: -n, --name argument must be a number."
     usage
 fi
 
@@ -160,7 +189,7 @@ mnemonic="$(echo -n "${hex_entropy}==" | base64 --decode | xxd -p -c 9999 | bx m
 if [[ "$word_mode" == true ]]; then
     mnemonic_length=$(echo -n "$mnemonic" | wc -w)
     if [ $c -gt $mnemonic_length ]; then
-        cwarn "The value of -c option ($c) exceeds the maximum word count ($mnemonic_length)!"
+        cwarn "The value of -c, --count option ($c) exceeds the maximum word count ($mnemonic_length)!"
     fi
     # Cut words
     echo -n "$mnemonic" | cut -d' ' -f1-"$c"
@@ -185,7 +214,7 @@ else
     mnemonic="$(echo -n "$mnemonic" | "$ROLLS_SH_PATH" -w | sed -n "${line_number}p")"
     mnemonic_length=$(echo -n "$mnemonic" | wc -c)
     if [ $c -gt $mnemonic_length ]; then
-        cwarn "The value of -c option ($c) exceeds the maximum '$output_format' digit count ($mnemonic_length)!"
+        cwarn "The value of -c, --count option ($c) exceeds the maximum '$output_format' digit count ($mnemonic_length)!"
     fi
     # Cut characters
     echo -n "$mnemonic" | cut -c 1-"$c"

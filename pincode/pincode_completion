@@ -11,7 +11,7 @@ _pincode_completion() {
     options=(
         "-f" "--file"
         "-n" "--name"
-        "-m" "--mode"
+        "-t" "--type"
         "-c" "--count"
         "-w" "--word-mode"
     )
@@ -30,7 +30,7 @@ _pincode_completion() {
             # Allow any string input for the -n option
             COMPREPLY=() # No specific completions, user can type anything
             ;;
-        -m | --mode)
+        -t | --type)
             # Suggest the allowed formats for the -m option
             COMPREPLY=($(compgen -W "dec hex entropy" -- "$current_word"))
             ;;
