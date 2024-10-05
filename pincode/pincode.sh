@@ -54,7 +54,7 @@ Usage: $script_name [-f <path>] [-n <string>] [-m <format>] [-c <number>] [-w]
   -f <path>    Provide the path to the password-protected pincode database (default: ${pincode_db})
   -n <string>  Provide a name for the pincode. The input is case insensitive (default: $(name_format_option $pincode_name))
   -m <format>  Select output format for PIN mode: dec | hex | entropy (default: $output_format)
-  -c <number>  Set the count of words (default: $w) or characters (default: $c)
+  -c <number>  Set the count of characters (default: $c) or words (default: $w)
   -w           Select BIP-39 word mode (default: $(name_mode_option $word_mode))
 Version: 1.0
 EOF
@@ -71,12 +71,12 @@ cwarn() {
 }
 
 # Check for required commands
-if ! command -v "$ROLLS_SH_PATH" &> /dev/null; then
+if ! command -v "$ROLLS_SH_PATH" &>/dev/null; then
     cerror "The ROLLS_SH_PATH is not set or does not point to a valid executable ($ROLLS_SH_PATH)."
     exit 2
 fi
 
-if ! command -v "$PASSMGR_PATH" &> /dev/null; then
+if ! command -v "$PASSMGR_PATH" &>/dev/null; then
     cerror "The PASSMGR_PATH is not set or does not point to a valid executable ($PASSMGR_PATH)."
     exit 3
 fi
@@ -158,7 +158,11 @@ hex_entropy="$("$PASSMGR_PATH" -c -l 86 -f "${pincode_db}" ${pincode_name})"
 mnemonic="$(echo -n "${hex_entropy}==" | base64 --decode | xxd -p -c 9999 | bx mnemonic-new)"
 
 if [[ "$word_mode" == true ]]; then
-    # Display raw output
+    mnemonic_length=$(echo -n "$mnemonic" | wc -w)
+    if [ $c -gt $mnemonic_length ]; then
+        cwarn "The value of -c option ($c) exceeds the maximum word count ($mnemonic_length)!"
+    fi
+    # Cut words
     echo -n "$mnemonic" | cut -d' ' -f1-"$c"
 else
     # Process output and extract words
@@ -177,6 +181,12 @@ else
         exit 1
         ;;
     esac
-    # Process output and extract words
-    echo -n "$mnemonic" | "$ROLLS_SH_PATH" -w | sed -n "${line_number}p" | cut -c 1-"$c"
+    # Converts words
+    mnemonic="$(echo -n "$mnemonic" | "$ROLLS_SH_PATH" -w | sed -n "${line_number}p")"
+    mnemonic_length=$(echo -n "$mnemonic" | wc -c)
+    if [ $c -gt $mnemonic_length ]; then
+        cwarn "The value of -c option ($c) exceeds the maximum '$output_format' digit count ($mnemonic_length)!"
+    fi
+    # Cut characters
+    echo -n "$mnemonic" | cut -c 1-"$c"
 fi
