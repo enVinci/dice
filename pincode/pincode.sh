@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -eu
 set -o pipefail
 
 Black='\033[0;30m'               # Black
@@ -31,17 +31,28 @@ declare -A option_map=(
     ["--name"]="-n"
     ["--type"]="-t"
     ["--count"]="-c"
+    ["--clipboard"]="-C"
     ["--word-mode"]="-w"
+    ["--verbose"]="-v"
+    ["--help"]="-h"
 )
 # Default values
 PASSMGR_PATH=${PASSMGR_PATH:-"passmgr"}
+PASSMGR_OPTIONS=(${PASSMGR_OPTIONS:-'-c'})
 ROLLS_SH_PATH=${ROLLS_SH_PATH:-"dicerolls"}
 pincode_db=${pincode_db:-"$HOME/pincode.db"}
 c=${c:-5}
 w=${w:-2}
+clipboard_option=${clipboard_option:-false}
+clipboard_selection=${clipboard_selection:-'primary'} # "primary", "secondary", "clipboard" or "buffer-cut"
 word_mode=${word_mode:-false}
+verbose_option=${verbose_option:-false}
 output_format=${output_format:-"dec"}
 pincode_name=${pincode_name:-''}
+
+parameter_to_str() {
+    [[ "${1}" == 'true' ]] && echo -e "${Green}on${NC}" || echo "off"
+}
 
 name_mode_option() {
     local value="$1"
@@ -62,7 +73,10 @@ Usage: $script_name [-f <path>] [-n <string>] [-t <format>] [-c <number>] [-w]
   -n, --name <string>   Provide a name for the pincode. The input is case insensitive (default: $(name_format_option $pincode_name))
   -t, --type <format>   Select output format for PIN mode: dec | hex | entropy (default: $output_format)
   -c, --count <number>  Set the count of characters (default: $c) or words (default: $w)
+  -C, --clipboard       Copy $(name_mode_option $word_mode) to the clipboard and do not print it (default: $(parameter_to_str $clipboard_option))
   -w, --word-mode       Select BIP-39 word mode (default: $(name_mode_option $word_mode))
+  -v, --verbose         Enable verbose mode (default: $(parameter_to_str $verbose_option))
+  -h, --help            Display this Help message
 Version: 1.0
 EOF
     exit 1
@@ -74,7 +88,7 @@ convert_options() {
     local converted_args=()
 
     for arg in "${args[@]}"; do
-        if [[ -n "${option_map[$arg]}" ]]; then
+        if [[ -n "${option_map[$arg]+exists}" ]]; then
             converted_args+=("${option_map[$arg]}")
         else
             converted_args+=("$arg")
@@ -110,7 +124,7 @@ converted_args=($(convert_options "$@"))
 set -- "${converted_args[@]}"
 
 # Parse command-line options
-while getopts ":c:wt:f:n:w" opt; do
+while getopts ":c:Cwt:f:n:wvh" opt; do
     case ${opt} in
     f)
         pincode_db="$OPTARG"
@@ -130,8 +144,17 @@ while getopts ":c:wt:f:n:w" opt; do
         c="$OPTARG"
         c_option=true
         ;;
+    C)
+        clipboard_option=true
+        ;;
     w)
         word_mode=true
+        ;;
+    v)
+        verbose_option=true
+        ;;
+    h)
+        usage
         ;;
     \?)
         cerror "Invalid option: -$OPTARG"
@@ -143,6 +166,15 @@ while getopts ":c:wt:f:n:w" opt; do
         ;;
     esac
 done
+
+command -v sed >/dev/null 2>&1 || cwarn "Dependency Check: sed command not found!"
+command -v xxd >/dev/null 2>&1 || cwarn "Dependency Check: xxd command not found!"
+command -v base64 >/dev/null 2>&1 || cwarn "Dependency Check: base64 command not found!"
+command -v bx >/dev/null 2>&1 || cwarn "Dependency Check: bx command not found!"
+command -v wc >/dev/null 2>&1 || cwarn "Dependency Check: wc command not found!"
+command -v cut >/dev/null 2>&1 || cwarn "Dependency Check: cut command not found!"
+command -v xclip >/dev/null 2>&1 || cwarn "Dependency Check: xclip command not found!"
+command -v "${PASSMGR_PATH}" >/dev/null 2>&1 || cwarn "Dependency Check: ${PASSMGR_PATH} command not found!"
 
 # Check for any remaining arguments
 shift $((OPTIND - 1))
@@ -170,20 +202,25 @@ fi
 
 # Set the count of words if not specified
 [ -v c_option ] || [[ ! "$word_mode" == true ]] || c="$w"
-
 # Validate that the argument is a number
 if ! [[ "$c" =~ ^[0-9]+$ ]]; then
     cerror "option: -n, --name argument must be a number."
     usage
 fi
 
+[ "$verbose_option" = "true" ] && PASSMGR_OPTIONS+=' -v'
+
 # Convert pincode name for command execution
 if [[ -n "${pincode_name}" ]]; then
     pincode_name="-n ${pincode_name}"
 fi
 
+# Check if '-c' is in the option array for executable
+[[ ! " ${PASSMGR_OPTIONS[@]} " =~ [[:space:]]-c[[:space:]] ]] && cwarn "The option of no coping to clipboard for the '$PASSMGR_PATH' is not set!"
+
 # Execute the command
-hex_entropy="$("$PASSMGR_PATH" -c -l 86 -f "${pincode_db}" ${pincode_name})"
+hex_entropy="$("$PASSMGR_PATH" ${PASSMGR_OPTIONS[@]} -l 86 -f "${pincode_db}" ${pincode_name} | tail -n 1)"
+[ ${#hex_entropy} -ne 86 ] && cerror "Entropy capture length assert (${#hex_entropy})!" && exit 111
 mnemonic="$(echo -n "${hex_entropy}==" | base64 --decode | xxd -p -c 9999 | bx mnemonic-new)"
 
 if [[ "$word_mode" == true ]]; then
@@ -192,7 +229,7 @@ if [[ "$word_mode" == true ]]; then
         cwarn "The value of -c, --count option ($c) exceeds the maximum word count ($mnemonic_length)!"
     fi
     # Cut words
-    echo -n "$mnemonic" | cut -d' ' -f1-"$c"
+    code="$(echo -n "$mnemonic" | cut -d' ' -f1-"$c")"
 else
     # Process output and extract words
     case "$output_format" in
@@ -217,5 +254,11 @@ else
         cwarn "The value of -c, --count option ($c) exceeds the maximum '$output_format' digit count ($mnemonic_length)!"
     fi
     # Cut characters
-    echo -n "$mnemonic" | cut -c 1-"$c"
+    code="$(echo -n "$mnemonic" | cut -c 1-"$c")"
+fi
+
+if $clipboard_option; then
+    echo -n "$code" | xclip -se "$clipboard_selection" >/dev/null
+else
+    echo "${code}"
 fi

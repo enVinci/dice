@@ -13,7 +13,10 @@ _pincode_completion() {
         "-n" "--name"
         "-t" "--type"
         "-c" "--count"
+        "-C" "--clipboard"
         "-w" "--word-mode"
+        "-v" "--verbose"
+        "-h" "--help"
     )
 
     # Handle completion for options
