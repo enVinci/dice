@@ -2,27 +2,28 @@
 set -eu
 set -o pipefail
 
-Black='\033[0;30m'               # Black
-Red='\033[0;31m'                 # Red
-Green='\033[0;32m'               # Green
-Yellow='\033[0;33m'              # Yellow
-Blue='\033[0;34m'                # Blue
-Purple='\033[0;35m'              # Purple
-Cyan='\033[0;36m'                # Cyan
-White='\033[0;37m'               # White
-Gray='\033[90m'                  # Gray
-BoldGray="\033[1;30m"            # Bold Gray
-RedText='\033[38;5;196m'         # Text color (red)
-LightPurpleText='\033[38;5;177m' # Text color (purple)
-Orange='\033[38;5;214m'          # Text color (orange)
-BG_BrightYellow='\033[48;5;226m' # Background color (bright yellow)
-BG_LightGray='\033[48;5;250m'    # Background color (light gray)
-BG_DarkGray='\033[48;5;236m'     # Background color (dark gray)
-BG_Purple='\033[48;5;93m'        # Background color (purple)
-BG_DarkPurple='\033[48;5;53m'    # Background color (dark purple)
-BG_DarkPink='\033[48;5;125m'     # Background color (dark pink)
-BG_DarkRed='\033[48;5;52m'       # Background color (dark red)
-NC='\033[0m'                     # No Color
+readonly Black='\033[0;30m'               # Black
+readonly Red='\033[0;31m'                 # Red
+readonly Green='\033[0;32m'               # Green
+readonly Yellow='\033[0;33m'              # Yellow
+readonly Blue='\033[0;34m'                # Blue
+readonly Purple='\033[0;35m'              # Purple
+readonly Cyan='\033[0;36m'                # Cyan
+readonly White='\033[0;37m'               # White
+readonly WhiteText='\033[38;5;255m'       # Text color (white)
+readonly Gray='\033[90m'                  # Gray
+readonly BoldGray="\033[1;30m"            # Bold Gray
+readonly RedText='\033[38;5;196m'         # Text color (red)
+readonly LightPurpleText='\033[38;5;177m' # Text color (purple)
+readonly OrangeText='\033[38;5;214m'      # Text color (orange)
+readonly BG_BrightYellow='\033[48;5;226m' # Background color (bright yellow)
+readonly BG_LightGray='\033[48;5;250m'    # Background color (light gray)
+readonly BG_DarkGray='\033[48;5;236m'     # Background color (dark gray)
+readonly BG_Purple='\033[48;5;93m'        # Background color (purple)
+readonly BG_DarkPurple='\033[48;5;53m'    # Background color (dark purple)
+readonly BG_DarkPink='\033[48;5;125m'     # Background color (dark pink)
+readonly BG_DarkRed='\033[48;5;52m'       # Background color (dark red)
+readonly NC='\033[0m'                     # No Color
 
 readonly script_name=$(basename "$0")
 # Create an associative array to map long options to short options
@@ -49,6 +50,7 @@ word_mode=${word_mode:-false}
 verbose_option=${verbose_option:-false}
 output_format=${output_format:-"dec"}
 pincode_name=${pincode_name:-''}
+format_option=false
 
 parameter_to_str() {
     [[ "${1}" == 'true' ]] && echo -e "${Green}on${NC}" || echo "off"
@@ -69,13 +71,13 @@ usage() {
     cat <<EOF >&2
 This script generates a PIN code using the BIP-85 password generator with a password-protected pincode database.
 Usage: $script_name [-f <path>] [-n <string>] [-t <format>] [-c <number>] [-w]
-  -f, --file <path>     Provide the path to the password-protected pincode database (default: ${pincode_db})
-  -n, --name <string>   Provide a name for the pincode. The input is case insensitive (default: $(name_format_option $pincode_name))
-  -t, --type <format>   Select output format for PIN mode: dec | hex | entropy (default: $output_format)
-  -c, --count <number>  Set the count of characters (default: $c) or words (default: $w)
-  -C, --clipboard       Copy $(name_mode_option $word_mode) to the clipboard and do not print it (default: $(parameter_to_str $clipboard_option))
-  -w, --word-mode       Select BIP-39 word mode (default: $(name_mode_option $word_mode))
-  -v, --verbose         Enable verbose mode (default: $(parameter_to_str $verbose_option))
+  -f, --file <path>     Provide the path to the password-protected pincode database (default: "${pincode_db}")
+  -n, --name <string>   Provide a name for the pincode. The input is case insensitive (default: $(name_format_option "${pincode_name}"))
+  -t, --type <format>   Select output format for PIN mode: dec | hex | entropy (default: ${output_format})
+  -c, --count <number>  Set the count of characters (default: ${c}) or words (default: ${w})
+  -C, --clipboard       Copy $(name_mode_option "${word_mode}") to the clipboard and do not print it (default: $(parameter_to_str "${clipboard_option}"))
+  -w, --word-mode       Select BIP-39 word mode (default: $(name_mode_option "${word_mode}"))
+  -v, --verbose         Enable verbose mode (default: $(parameter_to_str "${verbose_option}"))
   -h, --help            Display this Help message
 Version: 1.0
 EOF
@@ -189,26 +191,26 @@ if [[ ! -r "${pincode_db}" ]]; then
 fi
 
 # Validate that the argument is one of the allowed formats
-if [[ ! "$output_format" =~ ^(dec|hex|entropy)$ ]]; then
+if [[ ! "${output_format}" =~ ^(dec|hex|entropy)$ ]]; then
     cerror "Option: -t, --type argument must be one of: dec | hex | entropy."
     usage
 fi
 
 # Check for collisions between -t and -w
-if [[ "$word_mode" == true && "$format_option" == true ]]; then
+if [[ "${word_mode}" == true && "${format_option}" == true ]]; then
     cerror "Option: -t, --type cannot be used with -w, --word-mode option."
     usage
 fi
 
 # Set the count of words if not specified
-[ -v c_option ] || [[ ! "$word_mode" == true ]] || c="$w"
+[ -v c_option ] || [[ ! "${word_mode}" == true ]] || c="$w"
 # Validate that the argument is a number
 if ! [[ "$c" =~ ^[0-9]+$ ]]; then
     cerror "option: -n, --name argument must be a number."
     usage
 fi
 
-[ "$verbose_option" = "true" ] && PASSMGR_OPTIONS+=' -v'
+[ "${verbose_option}" = "true" ] && PASSMGR_OPTIONS+=' -v'
 
 # Convert pincode name for command execution
 if [[ -n "${pincode_name}" ]]; then
@@ -224,12 +226,12 @@ hex_entropy="$("$PASSMGR_PATH" ${PASSMGR_OPTIONS[@]} -l 86 -f "${pincode_db}" ${
 mnemonic="$(echo -n "${hex_entropy}==" | base64 --decode | xxd -p -c 9999 | bx mnemonic-new)"
 
 if [[ "$word_mode" == true ]]; then
-    mnemonic_length=$(echo -n "$mnemonic" | wc -w)
-    if [ $c -gt $mnemonic_length ]; then
-        cwarn "The value of -c, --count option ($c) exceeds the maximum word count ($mnemonic_length)!"
+    mnemonic_length=$(echo -n "${mnemonic}" | wc -w)
+    if [ $c -gt ${mnemonic_length} ]; then
+        cwarn "The value of -c, --count option ($c) exceeds the maximum word count (${mnemonic_length})!"
     fi
     # Cut words
-    code="$(echo -n "$mnemonic" | cut -d' ' -f1-"$c")"
+    code="$(echo -n "${mnemonic}" | cut -d' ' -f1-"$c")"
 else
     # Process output and extract words
     case "$output_format" in
@@ -248,17 +250,17 @@ else
         ;;
     esac
     # Converts words
-    mnemonic="$(echo -n "$mnemonic" | "$ROLLS_SH_PATH" -w | sed -n "${line_number}p")"
-    mnemonic_length=$(echo -n "$mnemonic" | wc -c)
-    if [ $c -gt $mnemonic_length ]; then
-        cwarn "The value of -c, --count option ($c) exceeds the maximum '$output_format' digit count ($mnemonic_length)!"
+    mnemonic="$(echo -n "${mnemonic}" | "$ROLLS_SH_PATH" -w | sed -n "${line_number}p")"
+    mnemonic_length=$(echo -n "${mnemonic}" | wc -c)
+    if [ $c -gt ${mnemonic_length} ]; then
+        cwarn "The value of -c, --count option ($c) exceeds the maximum '$output_format' digit count (${mnemonic_length})!"
     fi
     # Cut characters
-    code="$(echo -n "$mnemonic" | cut -c 1-"$c")"
+    code="$(echo -n "${mnemonic}" | cut -c 1-"$c")"
 fi
 
-if $clipboard_option; then
-    echo -n "$code" | xclip -se "$clipboard_selection" >/dev/null
+if ${clipboard_option}; then
+    echo -n "${code}" | xclip -se "$clipboard_selection" >/dev/null
 else
     echo "${code}"
 fi
