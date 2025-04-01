@@ -20,7 +20,29 @@
 To install the required dependencies, you can use `pip`:
 
 ```bash
-sudo apt-get install zbar-tools qrencode
+sudo apt-get install zbar-tools qrencode python3-venv
+
+python3 -m venv env
+
+# After git clone
+
+cd dice
+
+pip3 install .
+
+sudo cp ./pincode/pincode.sh /usr/local/bin/
+
+sudo cp ./pincode/pincode_completion /etc/bash_completion.d/
+```
+
+## Run from Python virtual environment
 
 ```bash
-pip3 install .
+source env/bin/activate
+
+dicerolls
+
+pincode.sh
+
+deactivate
+```

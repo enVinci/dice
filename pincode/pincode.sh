@@ -28,9 +28,12 @@ readonly NC='\033[0m'                     # No Color
 readonly script_name=$(basename "$0")
 # Create an associative array to map long options to short options
 declare -A option_map=(
+    ["--alg"]="-a"
     ["--file"]="-f"
     ["--name"]="-n"
-    ["--type"]="-t"
+    ["--machine"]="-m"
+    ["--tip"]="-t"
+    ["--style"]="-s"
     ["--count"]="-c"
     ["--clipboard"]="-C"
     ["--word-mode"]="-w"
@@ -41,16 +44,21 @@ declare -A option_map=(
 PASSMGR_PATH=${PASSMGR_PATH:-"passmgr"}
 PASSMGR_OPTIONS=(${PASSMGR_OPTIONS:-'-c'})
 ROLLS_SH_PATH=${ROLLS_SH_PATH:-"dicerolls"}
+hash_algorithm=${hash_algorithm:-''}
 pincode_db=${pincode_db:-"$HOME/pincode.db"}
+pincode_name=${pincode_name:-''}
 c=${c:-5}
 w=${w:-2}
+machine_id=${machine_id:-''}
+machine_id_option=${machine_id_option:-false}
+tip=${tip:-''}
+tip_option=${tip_option:-false}
+output_format=${output_format:-"dec"}
+format_option=false
 clipboard_option=${clipboard_option:-false}
 clipboard_selection=${clipboard_selection:-'primary'} # "primary", "secondary", "clipboard" or "buffer-cut"
 word_mode=${word_mode:-false}
 verbose_option=${verbose_option:-false}
-output_format=${output_format:-"dec"}
-pincode_name=${pincode_name:-''}
-format_option=false
 
 parameter_to_str() {
     [[ "${1}" == 'true' ]] && echo -e "${Green}on${NC}" || echo "off"
@@ -63,23 +71,31 @@ name_mode_option() {
 
 name_format_option() {
     local value="$1"
-    [ -n "$value" ] && echo "$pincode_name" || echo "ask the user"
+    local message="${2:-ask the user}"
+    [ -n "$value" ] && echo "$value" || echo "$message"
+}
+
+name_machine_id_option() {
+    [[ "${1}" == 'true' ]] && echo -e "$machine_id" || echo "this machine"
 }
 
 # Function to display usage information
 usage() {
     cat <<EOF >&2
 This script generates a PIN code using the BIP-85 password generator with a password-protected pincode database.
-Usage: $script_name [-f <path>] [-n <string>] [-t <format>] [-c <number>] [-w]
-  -f, --file <path>     Provide the path to the password-protected pincode database (default: "${pincode_db}")
-  -n, --name <string>   Provide a name for the pincode. The input is case insensitive (default: $(name_format_option "${pincode_name}"))
-  -t, --type <format>   Select output format for PIN mode: dec | hex | entropy (default: ${output_format})
-  -c, --count <number>  Set the count of characters (default: ${c}) or words (default: ${w})
-  -C, --clipboard       Copy $(name_mode_option "${word_mode}") to the clipboard and do not print it (default: $(parameter_to_str "${clipboard_option}"))
-  -w, --word-mode       Select BIP-39 word mode (default: $(name_mode_option "${word_mode}"))
-  -v, --verbose         Enable verbose mode (default: $(parameter_to_str "${verbose_option}"))
-  -h, --help            Display this Help message
-Version: 1.0
+Usage: $script_name [-a <string>] [-f <path>] [-n <string>] [-m <string>] [-t <format>] [-c <number>] [-C] [-w] [-v] [-h]
+  -a, --alg <string>       Specify the hashing algorithm to use for hashing the password name (default: '$(name_format_option "${hash_algorithm}" 'pincode database')')
+  -f, --file <path>        Provide the path to the password-protected pincode database (default: "${pincode_db}")
+  -n, --name <string>      Provide a name for the PIN Code. The input is case insensitive (default: '$(name_format_option "${pincode_name}")')
+  -m, --machine <string>   Provide the details of the PC to be used for decrypting the password-protected pincode database. (default: '$(name_machine_id_option "${machine_id_option}")')
+  -t, --tip <string>       Adds a tip associated with password name component to the password-protected pincode database. The tip can be up to 16 characters long, depending on the characters used.
+  -s, --style <format>     Select output format for PIN mode: dec | hex | entropy (default: ${output_format})
+  -c, --count <number>     Set the count of characters (default: ${c}) or words (default: ${w})
+  -C, --clipboard          Copy $(name_mode_option "${word_mode}") to the clipboard and do not print it (default: $(parameter_to_str "${clipboard_option}"))
+  -w, --word-mode          Select BIP-39 word mode (default: $(name_mode_option "${word_mode}"))
+  -v, --verbose            Enable verbose mode (default: $(parameter_to_str "${verbose_option}"))
+  -h, --help               Display this Help message
+Version: 1.3
 EOF
     exit 1
 }
@@ -90,14 +106,18 @@ convert_options() {
     local converted_args=()
 
     for arg in "${args[@]}"; do
-        if [[ -n "${option_map[$arg]+exists}" ]]; then
-            converted_args+=("${option_map[$arg]}")
+        if [[ ! -n "$arg" ]]; then
+            converted_args+=('')
+        elif [[ -n "${option_map["$arg"]+exists}" ]]; then
+            converted_args+=("${option_map["$arg"]}")
         else
             converted_args+=("$arg")
         fi
     done
 
-    echo "${converted_args[@]}"
+    #     echo "${converted_args[@]}"
+    # Set the positional parameters to the contents of the converted_args array
+    set -- "${converted_args[@]}"
 }
 
 # Function for colored echo
@@ -106,7 +126,7 @@ cerror() {
 }
 
 cwarn() {
-    echo -e "${BG_DarkRed}${Orange}${script_name} Warning:${NC} ${Yellow}$1${NC}" >&2
+    echo -e "${BG_DarkRed}${OrangeText}${script_name} Warning:${NC} ${Yellow}$1${NC}" >&2
 }
 
 # Check for required commands
@@ -121,13 +141,20 @@ if ! command -v "$PASSMGR_PATH" &>/dev/null; then
 fi
 
 # Convert long options to short options
-converted_args=($(convert_options "$@"))
+convert_options "$@"
 # Set the positional parameters to the contents of the converted_args array
-set -- "${converted_args[@]}"
+# set -- "${converted_args[@]}"
 
 # Parse command-line options
-while getopts ":c:Cwt:f:n:wvh" opt; do
+while getopts ":a:c:Cwt:s:f:n:m:wvh" opt; do
     case ${opt} in
+    a)
+        hash_algorithm="$OPTARG"
+        if [[ -z "$hash_algorithm" ]]; then
+            cerror "Option: -a, --alg requires a non-empty argument."
+            usage
+        fi
+        ;;
     f)
         pincode_db="$OPTARG"
         ;;
@@ -138,7 +165,15 @@ while getopts ":c:Cwt:f:n:wvh" opt; do
             usage
         fi
         ;;
+    m)
+        machine_id="$OPTARG"
+        machine_id_option=true
+        ;;
     t)
+        tip="$OPTARG"
+        tip_option=true
+        ;;
+    s)
         output_format="$OPTARG"
         format_option=true
         ;;
@@ -181,7 +216,7 @@ command -v "${PASSMGR_PATH}" >/dev/null 2>&1 || cwarn "Dependency Check: ${PASSM
 # Check for any remaining arguments
 shift $((OPTIND - 1))
 if [[ $# -gt 0 ]]; then
-    cerror "Unrecognized arguments: $*"
+    cerror "Unrecognized arguments: '$*'"
     usage
 fi
 
@@ -210,18 +245,24 @@ if ! [[ "$c" =~ ^[0-9]+$ ]]; then
     usage
 fi
 
+[[ -n "${hash_algorithm}" ]] && PASSMGR_OPTIONS+=" -a '$hash_algorithm'"
 [ "${verbose_option}" = "true" ] && PASSMGR_OPTIONS+=' -v'
-
 # Convert pincode name for command execution
-if [[ -n "${pincode_name}" ]]; then
-    pincode_name="-n ${pincode_name}"
-fi
+[[ -n "${pincode_name}" ]] && PASSMGR_OPTIONS+=" -n '${pincode_name}'"
+# if [[ -n "${pincode_name}" ]]; then
+#     pincode_name="-n '${pincode_name}'"
+# fi
+[ "${machine_id_option}" = true ] && PASSMGR_OPTIONS+=" -m '${machine_id}'"
+# if [[ "${machine_id_option}" = true ]]; then
+#     machine_id="-m '${machine_id}'"
+# fi
+[ "${tip_option}" = true ] && PASSMGR_OPTIONS+=" -et '${tip}'"
 
 # Check if '-c' is in the option array for executable
 [[ ! " ${PASSMGR_OPTIONS[@]} " =~ [[:space:]]-c[[:space:]] ]] && cwarn "The option of no coping to clipboard for the '$PASSMGR_PATH' is not set!"
-
 # Execute the command
-hex_entropy="$("$PASSMGR_PATH" ${PASSMGR_OPTIONS[@]} -l 86 -f "${pincode_db}" ${pincode_name} | tail -n 1)"
+hex_entropy="$(eval "$PASSMGR_PATH" ${PASSMGR_OPTIONS[@]} -l 86 -f "${pincode_db}" | tail -n 1)"
+[[ " ${PASSMGR_OPTIONS[@]} " =~ [[:space:]]-e[[:space:]]?.* ]] && exit $?
 [ ${#hex_entropy} -ne 86 ] && cerror "Entropy capture length assert (${#hex_entropy})!" && exit 111
 mnemonic="$(echo -n "${hex_entropy}==" | base64 --decode | xxd -p -c 9999 | bx mnemonic-new)"
 
